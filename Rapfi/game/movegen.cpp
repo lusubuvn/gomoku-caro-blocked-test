@@ -23,6 +23,7 @@
 #include "scopedmove.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <optional>
 
 namespace {
@@ -391,6 +392,49 @@ ScoredMove *findF3LineDefence(const Board &board,
 {
     assert(board.pattern(f3Pos, oppo, dir) == F3 || board.pattern(f3Pos, oppo, dir) == F3S);
 
+    // Blocked Caro: test F3 defences on the real board, including WALL endpoints.
+    if constexpr (R == FREESTYLE) {
+        if (board.blockedRule()) {
+            ScopedSwitchSide side(board, ~oppo);
+
+            Pos pos = f3Pos;
+            for (int i = 0; i < 4; i++) {
+                pos -= DIRECTION[dir];
+                if (!board.isInBoard(pos) || !board.isEmpty(pos))
+                    continue;
+
+                bool isDefence = false;
+                {
+                    ScopedMove<FREESTYLE, Board::MoveType::NO_EVAL> probe(board, pos);
+                    Pattern after = board.pattern(f3Pos, oppo, dir);
+                    isDefence = after != F3 && after != F3S;
+                }
+
+                if (isDefence)
+                    *list++ = pos;
+            }
+
+            pos = f3Pos;
+            for (int i = 0; i < 4; i++) {
+                pos += DIRECTION[dir];
+                if (!board.isInBoard(pos) || !board.isEmpty(pos))
+                    continue;
+
+                bool isDefence = false;
+                {
+                    ScopedMove<FREESTYLE, Board::MoveType::NO_EVAL> probe(board, pos);
+                    Pattern after = board.pattern(f3Pos, oppo, dir);
+                    isDefence = after != F3 && after != F3S;
+                }
+
+                if (isDefence)
+                    *list++ = pos;
+            }
+
+            return list;
+        }
+    }
+
     uint64_t key         = board.getKeyAt<R>(f3Pos, dir);
     uint32_t defenceMask = PatternConfig::lookupDefenceTable<R>(key, oppo);
 
@@ -630,19 +674,21 @@ template <Rule R>
 ScoredMove *generateB4F3Defence(const Board &board, ScoredMove *moveList)
 {
     assert(board.p4Count(~board.sideToMove(), C_BLOCK4_FLEX3));
+
     ScoredMove *last = findB4F3Defence<R>(board, moveList);
 
-    // If direct defence is not needed, we simply return empty move list.
     if (last == moveList)
         return moveList;
 
     std::sort(moveList, last, [](ScoredMove m, ScoredMove n) { return m.pos < n.pos; });
     last = std::unique(moveList, last, [](ScoredMove m, ScoredMove n) { return m.pos == n.pos; });
 
-    return std::remove_if(moveList, last, [&](ScoredMove move) {
+    ScoredMove *filteredEnd = std::remove_if(moveList, last, [&](ScoredMove move) {
         assert(board.isEmpty(move));
-        return board.pattern4(move, board.sideToMove()) >= E_BLOCK4;
+        return board.pattern4(move.pos, board.sideToMove()) >= E_BLOCK4;
     });
+
+    return filteredEnd;
 }
 
 }  // namespace
