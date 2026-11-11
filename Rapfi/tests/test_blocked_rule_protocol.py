@@ -15,7 +15,7 @@ CASES = [
     # Five existing stones H8-L8; playing M8 creates six, which still wins despite walls G8/N8.
     ("six in a row despite WALL endpoints", "YXBOARD 7,7,1 6,7,3 8,7,1 13,7,3 9,7,1 0,0,2 10,7,1 1,0,2 11,7,1 DONE", 12, 7, True, False),
     # Playing A8 makes exactly five A8-E8; left board edge and F8 are both blocked.
-    ("exact five blocked by edge and opponent", "YXBOARD 1,7,1 5,7,2 2,7,1 0,0,2 3,7,1 1,0,2 4,7,1 DONE", 0, 7, False, True),
+    ("exact five at edge with opposite endpoint blocked", "YXBOARD 1,7,1 5,7,2 2,7,1 0,0,2 3,7,1 1,0,2 4,7,1 DONE", 0, 7, True, True),
     # Same edge run, but F8 is open: at least one endpoint is open, so it wins.
     ("exact five with edge and open opposite end", "YXBOARD 1,7,1 0,0,2 2,7,1 1,0,2 3,7,1 2,0,2 4,7,1 DONE", 0, 7, True, True),
     # Diagonal five through H8, with both diagonal endpoints occupied by White.

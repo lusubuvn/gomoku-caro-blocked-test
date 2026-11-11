@@ -1,14 +1,6 @@
 import Worker from './engine-warpper.worker.js'
-import { script } from '@/../node_modules/dynamic-import/dist/import.js'
-import { threads, simd, relaxedSimd } from 'wasm-feature-detect'
 
 var callback, engineInstance, supportThreads, dataLoaded
-
-function locateFile(url, engineDirURL) {
-  // Redirect 'rapfi.*\.data' to 'rapfi.data'
-  if (/^rapfi.*\.data$/.test(url)) url = 'rapfi.data'
-  return engineDirURL + url
-}
 
 function getWasmMemoryArguments(isShared, maximum_memory_mb = 2048) {
   return {
@@ -18,94 +10,96 @@ function getWasmMemoryArguments(isShared, maximum_memory_mb = 2048) {
   }
 }
 
-function instantiateSharedWasmMemory() {
-  let maximum_memory_mb = 2048
-  // Find the maximum memory size that can be allocated
-  while (maximum_memory_mb > 512) {
-    try {
-      const memory = new WebAssembly.Memory(getWasmMemoryArguments(true, maximum_memory_mb))
-      memory.grow(1)
-      return memory
-    } catch (e) {
-      maximum_memory_mb /= 2
-    }
-  }
-  return new WebAssembly.Memory(getWasmMemoryArguments(true, maximum_memory_mb))
-}
-
-// Init engine and setup callback function for receiving engine output
-async function init(callbackFn_, loadFullEngine) {
+// Init engine and wait until the Worker reports that Rapfi is ready.
+async function init(callbackFn_) {
   callback = callbackFn_
   dataLoaded = false
+  supportThreads = false
 
-  supportThreads = await threads()
-  const supportSIMD = await simd()
-  const supportRelaxedSIMD = supportThreads && (await relaxedSimd())
+  const engineURL = `${process.env.BASE_URL}build/rapfi-single-simd128.js`
+  const worker = new Worker()
+  engineInstance = worker
 
-  const engineFlags =
-    (supportThreads ? '-multi' : '-single') +
-    (supportSIMD && loadFullEngine ? '-simd128' : '') +
-    (supportRelaxedSIMD && loadFullEngine ? '-relaxed' : '')
-  const engineDir = loadFullEngine ? '/' : '/fallback/'
-  const engineURL = `${process.env.BASE_URL}build${engineDir}rapfi${engineFlags}.js`
+  return new Promise((resolve, reject) => {
+    let settled = false
 
-  if (supportThreads) {
-    await script.import(/* webpackIgnore: true */ engineURL)
+    const fail = (message) => {
+      if (settled) return
+      settled = true
 
-    const engineDirURL = engineURL.substring(0, engineURL.lastIndexOf('/') + 1)
+      if (engineInstance === worker) engineInstance = null
+      worker.terminate()
 
-    engineInstance = await self['Rapfi']({
-      locateFile: (url) => locateFile(url, engineDirURL),
-      onReceiveStdout: (o) => onEngineStdout(o),
-      onReceiveStderr: (o) => onEngineStderr(o),
-      onExit: (c) => onEngineExit(c),
-      setStatus: (s) => onEngineStatus(s),
-      wasmMemory: instantiateSharedWasmMemory(),
-    })
-    dataLoaded = true
-    callback({ ok: true })
-  } else {
-    engineInstance = new Worker()
+      const error = message instanceof Error
+        ? message
+        : new Error(String(message || 'Unknown engine Worker error'))
 
-    engineInstance.onmessage = (e) => {
-      const { type, data } = e.data
+      callback({ error: error.message })
+      reject(error)
+    }
+
+    worker.onmessage = (e) => {
+      const { type, data } = e.data || {}
+
       if (type === 'stdout') onEngineStdout(data)
       else if (type === 'stderr') onEngineStderr(data)
       else if (type === 'exit') onEngineExit(data)
       else if (type === 'status') onEngineStatus(data)
-      else if (type === 'ready') (dataLoaded = true), callback({ ok: true })
-      else console.error('received unknown message from worker: ', e.data)
+      else if (type === 'error') fail(data || 'Engine Worker failed to load')
+      else if (type === 'ready') {
+        if (settled) return
+        dataLoaded = true
+        settled = true
+        callback({ ok: true })
+        resolve(engineURL)
+      } else {
+// eslint-disable-next-line no-console
+        console.error('received unknown message from worker: ', e.data)
+      }
     }
 
-    engineInstance.onerror = (err) => {
-      console.error('worker error: ' + err.message + '\nretrying after 0.5s...')
-      engineInstance.terminate()
-      setTimeout(() => init(callback), 500)
+    worker.onerror = (err) => {
+      if (err && typeof err.preventDefault === 'function') {
+        err.preventDefault()
+      }
+      fail(err && err.message ? err.message : 'Engine Worker failed')
     }
 
-    engineInstance.postMessage({
-      type: 'engineScriptURL',
-      data: {
-        engineURL: engineURL,
-        memoryArgs: getWasmMemoryArguments(false),
-      },
-    })
-  }
+    worker.onmessageerror = () => {
+      fail('Engine Worker returned an unreadable message')
+    }
 
-  return engineURL
+    try {
+      worker.postMessage({
+        type: 'engineScriptURL',
+        data: {
+          engineURL,
+          memoryArgs: getWasmMemoryArguments(false),
+        },
+      })
+    } catch (error) {
+      fail(error)
+    }
+  })
 }
 
-// Stop current engine's thinking process
-// Returns true if force stoped, otherwise returns false
+// Stop current engine thinking and create a fresh single-thread Worker.
 function stopThinking() {
   if (supportThreads) {
     sendCommand('YXSTOP')
     return false
-  } else {
-    engineInstance.terminate()
-    init(callback) // Use previous callback function
-    return true
   }
+
+  if (engineInstance) {
+    engineInstance.terminate()
+    engineInstance = null
+  }
+
+  init(callback).catch((error) => {
+// eslint-disable-next-line no-console
+    console.error('Engine restart failed:', error)
+  })
+  return true
 }
 
 // Send a command to engine
@@ -113,7 +107,7 @@ function sendCommand(cmd) {
   if (typeof cmd !== 'string' || cmd.length == 0) return
 
   if (supportThreads) engineInstance.sendCommand(cmd)
-  else engineInstance.postMessage({ type: 'command', data: cmd })
+  else if (engineInstance) engineInstance.postMessage({ type: 'command', data: cmd })
 }
 
 // process output from engine and call callback function
@@ -195,10 +189,12 @@ function onEngineStdout(output) {
 }
 
 function onEngineStderr(output) {
+// eslint-disable-next-line no-console
   console.error('[Engine Error] ' + output)
 }
 
 function onEngineExit(code) {
+// eslint-disable-next-line no-console
   console.log('[Engine Exit] ' + code)
 }
 

@@ -35,9 +35,9 @@
         :max="boardSizeValue * boardSizeValue" fillable />
       <x-number :title="$t('setting.thinking.handicap')" v-model="handicapValue" button-style="round" width="75px"
         :min="0" :max="100" :step="5" fillable />
-      <x-number v-if="supportThreads" :title="$t('setting.thinking.threads')" v-model="threadsValue"
-        button-style="round" width="75px" :min="1" :max="maxThreads" fillable />
-      <x-switch v-if="supportThreads" :title="$t('setting.thinking.pondering')" v-model="ponderingValue" />
+      <x-number :title="$t('setting.thinking.threads')" v-model="threadsValue"
+        button-style="round" width="75px" :min="1" :max="1" fillable />
+      <x-switch :title="$t('setting.thinking.pondering')" v-model="ponderingValue" />
       <popup-radio :title="$t('setting.thinking.config.title')" v-model="configIndexValue"
         :options="configIndexOptions" />
       <popup-radio :title="$t('setting.thinking.candrange.title')" v-model="candRangeValue"
@@ -300,7 +300,7 @@ export default {
     },
     threadsValue: {
       get() {
-        return this.threads
+        return 1
       },
       set(v) {
         this.setValue({ key: 'threads', value: v })
@@ -308,7 +308,7 @@ export default {
     },
     ponderingValue: {
       get() {
-        return this.supportThreads ? this.pondering : false
+        return this.pondering
       },
       set(v) {
         this.setValue({ key: 'pondering', value: v })

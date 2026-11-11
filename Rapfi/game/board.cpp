@@ -53,8 +53,10 @@ Pattern classifyBlockedCaroLine(const Board &board, Pos pos, Color side, int dir
 
     const Pos leftEnd  = pos + DIRECTION[dir] * (-left - 1);
     const Pos rightEnd = pos + DIRECTION[dir] * (right + 1);
-    const bool leftBlocked  = board.get(leftEnd) != EMPTY;
-    const bool rightBlocked = board.get(rightEnd) != EMPTY;
+    const bool leftBlocked =
+        leftEnd.isInBoard(board.size(), board.size()) && board.get(leftEnd) != EMPTY;
+    const bool rightBlocked =
+        rightEnd.isInBoard(board.size(), board.size()) && board.get(rightEnd) != EMPTY;
     return leftBlocked && rightBlocked ? DEAD : F5;
 }
 

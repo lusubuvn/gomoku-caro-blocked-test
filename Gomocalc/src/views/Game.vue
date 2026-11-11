@@ -1,7 +1,9 @@
 <template>
   <div class="game">
     <div class="board-box">
-      <Board ref="board" :is-ai-turn="isAITurn" :preview-pv="previewPv" @clicked="clicked"></Board>
+      <Board ref="board" :is-ai-turn="isAITurn" :preview-pv="previewPv"
+        :block-mode="blockMode" @clicked="clicked"
+        @toggle-blocked="onToggleBlocked"></Board>
 
       <div class="button-box">
         <scroller lock-y :scrollbar-x="$store.state.screenWidth < buttonBarWidth" :bounce="false">
@@ -10,6 +12,19 @@
               <flexbox-item>
                 <x-button @click.native="newGame" style="padding: 0">
                   <i class="fa fa-file-o" aria-hidden="true"></i>
+                </x-button>
+              </flexbox-item>
+              <flexbox-item>
+                <x-button :disabled="!ready || thinking"
+                  :class="{ 'wall-active': blockMode }"
+                  style="padding: 0" @click.native="toggleBlockMode">
+                  <i class="fa fa-lock" :style="{ color: blockMode ? '#229954' : '' }" aria-hidden="true"></i>
+                </x-button>
+              </flexbox-item>
+              <flexbox-item>
+                <x-button :disabled="!ready || thinking || blocked.length == 0"
+                  style="padding: 0" @click.native="clearBlockedCells">
+                  <i class="fa fa-trash" aria-hidden="true"></i>
                 </x-button>
               </flexbox-item>
               <flexbox-item>
@@ -375,6 +390,7 @@ export default {
   data: function () {
     return {
       aiTimeUsed: 0,
+      blockMode: false,
       showLoading: false,
       showBalanceOptions: false,
       showFlipOptions: false,
@@ -405,7 +421,7 @@ export default {
       'showAnalysis',
     ]),
     ...mapState('ai', ['outputs', 'thinking', 'lastThinkTime', 'ready', 'loadingProgress']),
-    ...mapState('position', ['position', 'lastPosition', 'winline', 'swaped']),
+    ...mapState('position', ['position', 'blocked', 'lastPosition', 'winline', 'swaped']),
     ...mapGetters('settings', ['turnTime', 'matchTime', 'gameRule']),
     ...mapGetters('ai', ['bestlineStr', 'bestline']),
     ...mapGetters('position', ['isEmpty', 'playerToMove', 'moveLeftCount', 'posStr']),
@@ -474,6 +490,8 @@ export default {
     ...mapMutations('settings', ['setValue']),
     ...mapMutations('ai', ['clearUsedTime']),
     ...mapActions('position', [
+      'toggleBlocked',
+      'clearBlocked',
       'setPosStr',
       'makeMove',
       'backToBegin',
@@ -615,8 +633,25 @@ export default {
       )
     },
 
+    toggleBlockMode() {
+      if (!this.ready || this.thinking) return
+      this.blockMode = !this.blockMode
+    },
+
+    onToggleBlocked(pos) {
+      if (!this.ready || this.thinking) return
+      this.toggleBlocked([pos.x, pos.y])
+    },
+
+    clearBlockedCells() {
+      if (!this.ready || this.thinking) return
+      this.clearBlocked()
+      this.blockMode = false
+    },
+
     newGame() {
       this.checkThinking().then(() => {
+        this.blockMode = false
         this.newBoard(this.boardSize)
         this.restart()
       })

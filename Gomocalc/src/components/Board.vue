@@ -315,11 +315,33 @@ function drawForbid(ctx, style, cs, forbid) {
   ctx.restore()
 }
 
+function drawBlocked(ctx, cs, blocked) {
+  ctx.save()
+  ctx.strokeStyle = '#555555'
+  ctx.lineWidth = 0.055
+  ctx.lineCap = 'round'
+  ctx.translate(paddingX + cs / 2, paddingTop + cs / 2)
+  ctx.scale(cs, cs)
+
+  const size = 0.18
+  for (let pos of blocked) {
+    ctx.beginPath()
+    ctx.moveTo(pos[0] - size, pos[1] - size)
+    ctx.lineTo(pos[0] + size, pos[1] + size)
+    ctx.moveTo(pos[0] + size, pos[1] - size)
+    ctx.lineTo(pos[0] - size, pos[1] + size)
+    ctx.stroke()
+  }
+
+  ctx.restore()
+}
+
 export default {
   name: 'Board',
   props: {
     isAiTurn: Boolean,
     previewPv: Object,
+    blockMode: Boolean,
   },
   data: function () {
     return {
@@ -337,6 +359,7 @@ export default {
     ...mapState('position', {
       boardSize: 'size',
       position: 'position',
+      blocked: 'blocked',
       winline: 'winline',
     }),
     ...mapState('settings', [
@@ -358,7 +381,7 @@ export default {
       forbid: (state) => state.outputs.forbid,
       thinking: 'thinking',
     }),
-    ...mapGetters('position', ['isInBoard']),
+    ...mapGetters('position', ['isInBoard', 'isBlocked']),
     context() {
       return (idx) => {
         return this.$refs['canvas' + idx].getContext('2d')
@@ -453,6 +476,10 @@ export default {
       ctx.scale(this.renderRatio, this.renderRatio)
       if (!noclear) ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight)
 
+      if (!this.previewPv && this.blocked.length > 0) {
+        drawBlocked(ctx, cellSize, this.blocked)
+      }
+
       if (this.showForbid && !this.thinking && !this.previewPv) {
         drawForbid(ctx, this.boardStyle, cellSize, this.forbid)
       }
@@ -514,16 +541,14 @@ export default {
       gif.render()
     },
     onMouseDown(event) {
-      if (this.clickCheck == 2) {
-        if (event.type === 'touchstart') {
-          this.cancelMouse = true
-          event.button = 0
-          if (!event.pageX) event.pageX = event.touches[0].pageX
-          if (!event.pageY) event.pageY = event.touches[0].pageY
-        } else if (this.cancelMouse) {
-          this.cancelMouse = false
-          return
-        }
+      if (event.type === 'touchstart') {
+        this.cancelMouse = true
+        event.button = 0
+        if (!event.pageX) event.pageX = event.touches[0].pageX
+        if (!event.pageY) event.pageY = event.touches[0].pageY
+      } else if (this.cancelMouse) {
+        this.cancelMouse = false
+        return
       }
 
       let x = event.pageX - this.$refs.canvasBoard.getBoundingClientRect().left
@@ -531,6 +556,14 @@ export default {
       let cellSize = this.boardWidth / this.boardSize
       x = Math.floor((x - paddingX) / cellSize)
       y = Math.floor((y - paddingTop) / cellSize)
+
+      if (this.blockMode &&
+          (event.button === 0 || event.type === 'touchstart')) {
+        if (this.isInBoard([x, y])) {
+          this.$emit('toggle-blocked', { x, y })
+        }
+        return
+      }
 
       if (event.button != 0) {
         this.$emit('clicked', { x, y, button: event.button })
@@ -613,6 +646,9 @@ export default {
     },
     boardSize() {
       this.debouncedRedrawAllLayers()
+    },
+    blocked() {
+      this.drawRealtimeLayer()
     },
     position: {
       handler() {

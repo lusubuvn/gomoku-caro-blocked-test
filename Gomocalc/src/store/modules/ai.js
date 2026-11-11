@@ -160,6 +160,14 @@ const mutations = {
 
 const actions = {
   async initEngine({ commit, dispatch, state }, loadFullEngine) {
+    const supportSimd = await dispatch(
+      'getBrowserCapabilities',
+      null,
+      { root: true }
+    )
+    if (!supportSimd) {
+      throw new Error('This browser does not support WebAssembly SIMD.')
+    }
     commit('setLoadingProgress', 0.0)
     commit('setReady', false)
     const callback = (r) => {
@@ -222,14 +230,14 @@ const actions = {
         commit('setLoadingProgress', r.loading.progress)
       }
     }
-    const engineURL = await engine.init(callback, loadFullEngine)
+    const engineURL = await engine.init(callback)
     commit('setFullEngine', loadFullEngine)
     commit('addMessage', 'Engine: ' + engineURL)
   },
   sendInfo({ rootState, rootGetters }) {
     engine.sendCommand('INFO RULE ' + rootState.settings.rule)
     engine.sendCommand('YXCAROBLOCKED ' + (rootState.settings.blockedRule && rootState.settings.rule === 0 ? 1 : 0))
-    engine.sendCommand('INFO THREAD_NUM ' + (rootState.settings.threads || 1))
+    engine.sendCommand('INFO THREAD_NUM 1')
     engine.sendCommand('INFO CAUTION_FACTOR ' + rootState.settings.candRange)
     engine.sendCommand('INFO STRENGTH ' + rootState.settings.strength)
     engine.sendCommand('INFO TIMEOUT_TURN ' + rootGetters['settings/turnTime'])
@@ -242,6 +250,7 @@ const actions = {
   },
   sendBoard({ rootState }, immediateThink) {
     let position = rootState.position.position
+    let blocked = rootState.position.blocked || []
 
     let command = immediateThink ? 'BOARD' : 'YXBOARD'
     let side = position.length % 2 == 0 ? 1 : 2
@@ -249,8 +258,23 @@ const actions = {
       command += ' ' + pos[0] + ',' + pos[1] + ',' + side
       side = 3 - side
     }
+
+    for (let pos of blocked) {
+      command += ' ' + pos[0] + ',' + pos[1] + ',3'
+    }
+
     command += ' DONE'
     engine.sendCommand(command)
+
+    engine.sendCommand('YXBLOCKRESET')
+    for (let pos of blocked) {
+      engine.sendCommand('YXBLOCK ' + pos[0] + ',' + pos[1] + ' DONE')
+    }
+  },
+  syncBlocks({ state, rootState, dispatch }) {
+    if (!state.ready) return
+    if (rootState.position.size !== state.startSize) return
+    dispatch('sendBoard', false)
   },
   think({ commit, dispatch, state, rootState, rootGetters }, args) {
     if (!state.ready) {
