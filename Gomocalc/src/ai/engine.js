@@ -1,4 +1,6 @@
 import Worker from './engine-warpper.worker.js'
+import { script } from '@/../node_modules/dynamic-import/dist/import.js'
+import { threads } from 'wasm-feature-detect'
 
 var callback, engineInstance, supportThreads, dataLoaded
 
@@ -15,6 +17,54 @@ async function init(callbackFn_) {
   callback = callbackFn_
   dataLoaded = false
   supportThreads = false
+
+  let canUseThreads = false
+  try {
+    canUseThreads =
+      await threads() &&
+      typeof window.crossOriginIsolated !== 'undefined' &&
+      window.crossOriginIsolated === true &&
+      typeof SharedArrayBuffer !== 'undefined'
+  } catch (error) {
+    canUseThreads = false
+  }
+
+  if (canUseThreads) {
+    const engineURL = `${process.env.BASE_URL}build/rapfi-multi-simd128.js`
+
+    try {
+      await script.import(/* webpackIgnore: true */ engineURL)
+
+      const engineDirURL = engineURL.substring(0, engineURL.lastIndexOf('/') + 1)
+
+      const memory = new WebAssembly.Memory({
+        initial: 64 * ((1024 * 1024) / 65536),
+        maximum: 2048 * ((1024 * 1024) / 65536),
+        shared: true,
+      })
+
+      const instance = await self['Rapfi']({
+        locateFile: (url) => engineDirURL + url,
+        onReceiveStdout: (o) => onEngineStdout(o),
+        onReceiveStderr: (o) => onEngineStderr(o),
+        onExit: (c) => onEngineExit(c),
+        setStatus: (s) => onEngineStatus(s),
+        wasmMemory: memory,
+      })
+
+      engineInstance = instance
+      supportThreads = true
+      dataLoaded = true
+      callback({ ok: true, supportThreads: true })
+
+      return engineURL
+    } catch (error) {
+      supportThreads = false
+      engineInstance = null
+      // eslint-disable-next-line no-console
+      console.error('[Rapfi] Multi-thread initialization failed; using single-thread engine:', error)
+    }
+  }
 
   const engineURL = `${process.env.BASE_URL}build/rapfi-single-simd128.js`
   const worker = new Worker()
@@ -50,10 +100,10 @@ async function init(callbackFn_) {
         if (settled) return
         dataLoaded = true
         settled = true
-        callback({ ok: true })
+        callback({ ok: true, supportThreads: false })
         resolve(engineURL)
       } else {
-// eslint-disable-next-line no-console
+        // eslint-disable-next-line no-console
         console.error('received unknown message from worker: ', e.data)
       }
     }

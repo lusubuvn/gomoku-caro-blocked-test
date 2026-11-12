@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  deployments: write
 
 jobs:
   build:
@@ -57,7 +58,6 @@ jobs:
           test -s Rapfi/build-wasm-multi-test/rapfi-multi-simd128.js
           test -s Rapfi/build-wasm-multi-test/rapfi-multi-simd128.wasm
           test -s Rapfi/build-wasm-multi-test/rapfi-multi-simd128.data
-          test -s Rapfi/build-wasm-multi-test/rapfi-multi-simd128.worker.js
 
       - name: Check engine files
         run: |
@@ -73,6 +73,68 @@ jobs:
           test "$SINGLE_DATA" -gt 1000000
           test "$MULTI_DATA" -gt 1000000
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: Gomocalc/package-lock.json
+
+      - name: Install website dependencies
+        working-directory: Gomocalc
+        run: npm ci
+
+      - name: Copy single and multi WASM into website
+        run: |
+          mkdir -p Gomocalc/public/build
+
+          cp Rapfi/build-wasm-single-test/rapfi-single-simd128.js Gomocalc/public/build/rapfi-single-simd128.js
+          cp Rapfi/build-wasm-single-test/rapfi-single-simd128.wasm Gomocalc/public/build/rapfi-single-simd128.wasm
+          cp Rapfi/build-wasm-single-test/rapfi-single-simd128.data Gomocalc/public/build/rapfi.data
+
+          cp Rapfi/build-wasm-multi-test/rapfi-multi-simd128.js Gomocalc/public/build/rapfi-multi-simd128.js
+          cp Rapfi/build-wasm-multi-test/rapfi-multi-simd128.wasm Gomocalc/public/build/rapfi-multi-simd128.wasm
+          cp Rapfi/build-wasm-multi-test/rapfi-multi-simd128.data Gomocalc/public/build/rapfi-multi-simd128.data
+
+      - name: Build website with single and multi WASM
+        working-directory: Gomocalc
+        env:
+          NODE_OPTIONS: --openssl-legacy-provider
+          VUE_APP_PUBLIC_PATH: /
+        run: npm run build
+
+      - name: Verify website output
+        run: |
+          set -e
+
+          test -s Gomocalc/dist/build/rapfi-single-simd128.js
+          test -s Gomocalc/dist/build/rapfi-single-simd128.wasm
+          test -s Gomocalc/dist/build/rapfi.data
+
+          test -s Gomocalc/dist/build/rapfi-multi-simd128.js
+          test -s Gomocalc/dist/build/rapfi-multi-simd128.wasm
+          test -s Gomocalc/dist/build/rapfi-multi-simd128.data
+
+          echo "===== WEBSITE ENGINE FILES ====="
+          ls -lh Gomocalc/dist/build/rapfi-*
+          ls -lh Gomocalc/dist/build/rapfi.data
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          command: pages deploy Gomocalc/dist --project-name=gomoku-caro-blocked-test --branch=feature/engine-settings
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload website test artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gomocalc-website-single-and-multi
+          path: Gomocalc/dist
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Upload test engines
         uses: actions/upload-artifact@v4
         with:
@@ -84,4 +146,3 @@ jobs:
             Rapfi/build-wasm-multi-test/rapfi-multi-simd128.js
             Rapfi/build-wasm-multi-test/rapfi-multi-simd128.wasm
             Rapfi/build-wasm-multi-test/rapfi-multi-simd128.data
-            Rapfi/build-wasm-multi-test/rapfi-multi-simd128.worker.js

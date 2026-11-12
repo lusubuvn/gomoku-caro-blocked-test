@@ -62,6 +62,7 @@ Search::SearchOptions         options;
 bool                          GUIMode   = false;
 std::atomic_bool              thinking  = false;
 std::atomic_bool              exiting   = false;
+std::atomic_bool              cancelPonderAfterStop = false;
 std::optional<CandidateRange> candRange = std::nullopt;
 bool                          blockedRuleMode = false;
 
@@ -119,6 +120,8 @@ void think(Board                             &board,
     if (Config::GeneralCfg.reloadConfigEachMove)
         loadConfig();
 
+    cancelPonderAfterStop.store(false, std::memory_order_relaxed);
+
     thinking = true;
     Search::Engine.startThinking(board, options, false, [startTime = now()]() {
         // This callback runs on the main search thread while the protocol
@@ -147,7 +150,8 @@ void think(Board                             &board,
         // single-threaded build the ponder search would run synchronously on
         // the protocol thread and could never receive a stop command.
 #ifdef MULTI_THREADING
-        if (Search::Engine.ctx.startPonderAfterThinking && !exiting)
+        if (Search::Engine.ctx.startPonderAfterThinking && !exiting
+            && !cancelPonderAfterStop.load(std::memory_order_relaxed))
             Search::Engine.startThinking(*GomocupProtocol::board, options, true);
 #endif
     });
@@ -896,6 +900,7 @@ bool runProtocol()
     // clang-format off
     if (cmd == "END")                          return Search::Engine.stopThinking(), true;
     else if (cmd == "STOP" || cmd == "YXSTOP") {
+        cancelPonderAfterStop.store(true, std::memory_order_relaxed);
         // Raw stop first for minimal latency mid-search. A stop that races the
         // finish callback loses: the callback's nested ponder startThinking
         // resets the terminate flag after us. Acquiring protocolMutex

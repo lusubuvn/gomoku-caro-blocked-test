@@ -36,7 +36,7 @@
       <x-number :title="$t('setting.thinking.handicap')" v-model="handicapValue" button-style="round" width="75px"
         :min="0" :max="100" :step="5" fillable />
       <x-number :title="$t('setting.thinking.threads')" v-model="threadsValue"
-        button-style="round" width="75px" :min="1" :max="1" fillable />
+        button-style="round" width="75px" :min="1" :max="maxThreads" fillable />
       <x-switch :title="$t('setting.thinking.pondering')" v-model="ponderingValue" />
       <popup-radio :title="$t('setting.thinking.config.title')" v-model="configIndexValue"
         :options="configIndexOptions" />
@@ -300,10 +300,11 @@ export default {
     },
     threadsValue: {
       get() {
-        return 1
+        return Math.max(1, Math.min(Number(this.threads) || 1, this.maxThreads))
       },
       set(v) {
-        this.setValue({ key: 'threads', value: v })
+        const value = Math.max(1, Math.min(Number(v) || 1, this.maxThreads))
+        this.setValue({ key: 'threads', value })
       },
     },
     ponderingValue: {

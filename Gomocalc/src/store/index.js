@@ -3,7 +3,7 @@ import Vuex from 'vuex'
 import ai from './modules/ai'
 import position from './modules/position'
 import settings from './modules/settings'
-import { simd } from 'wasm-feature-detect'
+import { threads, simd } from 'wasm-feature-detect'
 
 Vue.use(Vuex)
 
@@ -46,18 +46,47 @@ export default new Vuex.Store({
       state.supportSimd = supportSimd
       state.supportRelaxedSimd = supportRelaxedSimd
     },
+    setEngineThreadSupport(state, supportThreads) {
+      const hardwareThreads = Number(navigator.hardwareConcurrency) || 2
+      state.supportThreads = !!supportThreads
+      state.maxThreads = supportThreads
+        ? Math.max(1, Math.min(hardwareThreads, 16))
+        : 1
+    },
   },
   actions: {
-    async getBrowserCapabilities({ commit }) {
+    async getBrowserCapabilities({ commit, rootState }) {
       const supportSimd = await simd()
+      let supportThreads = false
 
-      // The deployed Rapfi build is single-thread SIMD only.
+      try {
+        supportThreads =
+          await threads() &&
+          typeof window.crossOriginIsolated !== 'undefined' &&
+          window.crossOriginIsolated === true &&
+          typeof SharedArrayBuffer !== 'undefined'
+      } catch (e) {
+        supportThreads = false
+      }
+
+      const hardwareThreads = Number(navigator.hardwareConcurrency) || 2
+      const maxThreads = supportThreads
+        ? Math.max(1, Math.min(hardwareThreads, 16))
+        : 1
+
       commit('setBrowserCapability', {
-        maxThreads: 1,
-        supportThreads: false,
+        maxThreads,
+        supportThreads,
         supportSimd,
         supportRelaxedSimd: false,
       })
+
+      if (rootState.settings.threads === null) {
+        commit('settings/setValue', {
+          key: 'threads',
+          value: Math.max(1, Math.ceil(maxThreads / 2)),
+        })
+      }
 
       return supportSimd
     },

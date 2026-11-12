@@ -223,6 +223,7 @@ const actions = {
         commit('setOutput', { key: 'error', value: r.error })
         commit('addMessage', 'Error: ' + r.error)
       } else if (r.ok) {
+        commit('setEngineThreadSupport', !!r.supportThreads, { root: true })
         commit('addMessage', 'Engine ready.')
         commit('setReady', true)
         dispatch('checkForbid')
@@ -237,7 +238,11 @@ const actions = {
   sendInfo({ rootState, rootGetters }) {
     engine.sendCommand('INFO RULE ' + rootState.settings.rule)
     engine.sendCommand('YXCAROBLOCKED ' + (rootState.settings.blockedRule && rootState.settings.rule === 0 ? 1 : 0))
-    engine.sendCommand('INFO THREAD_NUM 1')
+    const maxThreads = rootState.supportThreads ? rootState.maxThreads : 1
+    const selectedThreads = rootState.supportThreads
+      ? Math.max(1, Math.min(Number(rootState.settings.threads) || 1, maxThreads))
+      : 1
+    engine.sendCommand('INFO THREAD_NUM ' + selectedThreads)
     engine.sendCommand('INFO CAUTION_FACTOR ' + rootState.settings.candRange)
     engine.sendCommand('INFO STRENGTH ' + rootState.settings.strength)
     engine.sendCommand('INFO TIMEOUT_TURN ' + rootGetters['settings/turnTime'])
@@ -245,7 +250,10 @@ const actions = {
     engine.sendCommand('INFO MAX_DEPTH ' + rootGetters['settings/depth'])
     engine.sendCommand('INFO MAX_NODE ' + rootGetters['settings/nodes'])
     engine.sendCommand('INFO SHOW_DETAIL ' + (rootState.settings.showDetail ? 3 : 2))
-    engine.sendCommand('INFO PONDERING ' + (rootState.settings.pondering ? 1 : 0))
+    engine.sendCommand(
+      'INFO PONDERING ' +
+      (rootState.supportThreads && rootState.settings.pondering ? 1 : 0)
+    )
     engine.sendCommand('INFO SWAPABLE ' + (rootState.position.swaped ? 0 : 1))
   },
   sendBoard({ rootState }, immediateThink) {
