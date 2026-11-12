@@ -57,6 +57,7 @@ jobs:
           test -s Rapfi/build-wasm-multi-test/rapfi-multi-simd128.js
           test -s Rapfi/build-wasm-multi-test/rapfi-multi-simd128.wasm
           test -s Rapfi/build-wasm-multi-test/rapfi-multi-simd128.data
+          test -s Rapfi/build-wasm-multi-test/rapfi-multi-simd128.worker.js
 
       - name: Check engine files
         run: |
@@ -83,3 +84,4 @@ jobs:
             Rapfi/build-wasm-multi-test/rapfi-multi-simd128.js
             Rapfi/build-wasm-multi-test/rapfi-multi-simd128.wasm
             Rapfi/build-wasm-multi-test/rapfi-multi-simd128.data
+            Rapfi/build-wasm-multi-test/rapfi-multi-simd128.worker.js
