@@ -23,12 +23,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.56
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: Gomocalc/package-lock.json
+
+      - name: Configure Rapfi WASM
+        run: |
+          emcmake cmake -S Rapfi -B Rapfi/build-wasm \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNO_MULTI_THREADING=ON \
+            -DNO_COMMAND_MODULES=ON \
+            -DUSE_WASM_SIMD=ON \
+            -DUSE_WASM_SIMD_RELAXED=OFF \
+            -DUSE_NEON=OFF \
+            -DENABLE_LTO=OFF
+
+      - name: Build Rapfi WASM
+        run: |
+          cmake --build Rapfi/build-wasm --target rapfi --parallel 2
+
+          test -s Rapfi/build-wasm/rapfi-single-simd128.js
+          test -s Rapfi/build-wasm/rapfi-single-simd128.wasm
+          test -s Rapfi/build-wasm/rapfi-single-simd128.data
+
+          DATA_SIZE=$(stat -c%s Rapfi/build-wasm/rapfi-single-simd128.data)
+          echo "WASM data size: ${DATA_SIZE} bytes"
+          test "$DATA_SIZE" -gt 1000000
 
       - name: Install dependencies
         working-directory: Gomocalc
@@ -39,11 +67,31 @@ jobs:
             npm install
           fi
 
+      - name: Copy Rapfi WASM into website
+        run: |
+          mkdir -p Gomocalc/public/build
+          cp Rapfi/build-wasm/rapfi-single-simd128.js \
+            Gomocalc/public/build/rapfi-single-simd128.js
+          cp Rapfi/build-wasm/rapfi-single-simd128.wasm \
+            Gomocalc/public/build/rapfi-single-simd128.wasm
+          cp Rapfi/build-wasm/rapfi-single-simd128.data \
+            Gomocalc/public/build/rapfi.data
+
+          test -s Gomocalc/public/build/rapfi-single-simd128.js
+          test -s Gomocalc/public/build/rapfi-single-simd128.wasm
+          test -s Gomocalc/public/build/rapfi.data
+
       - name: Build website
         working-directory: Gomocalc
         env:
           NODE_OPTIONS: --openssl-legacy-provider
         run: npm run build
+
+      - name: Verify website output
+        run: |
+          test -s Gomocalc/dist/build/rapfi-single-simd128.js
+          test -s Gomocalc/dist/build/rapfi-single-simd128.wasm
+          test -s Gomocalc/dist/build/rapfi.data
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
