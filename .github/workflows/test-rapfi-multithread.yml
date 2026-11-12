@@ -1,0 +1,85 @@
+name: Test Rapfi Single and Multi WASM
+
+on:
+  push:
+    branches:
+      - feature/engine-settings
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.56
+
+      - name: Configure single-thread engine
+        run: |
+          emcmake cmake -S Rapfi -B Rapfi/build-wasm-single-test \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNO_MULTI_THREADING=ON \
+            -DNO_COMMAND_MODULES=ON \
+            -DUSE_WASM_SIMD=ON \
+            -DUSE_WASM_SIMD_RELAXED=OFF \
+            -DUSE_NEON=OFF \
+            -DENABLE_LTO=OFF
+
+      - name: Build single-thread engine
+        run: |
+          cmake --build Rapfi/build-wasm-single-test --target rapfi --parallel 2
+          test -s Rapfi/build-wasm-single-test/rapfi-single-simd128.js
+          test -s Rapfi/build-wasm-single-test/rapfi-single-simd128.wasm
+          test -s Rapfi/build-wasm-single-test/rapfi-single-simd128.data
+
+      - name: Configure multi-thread engine
+        run: |
+          emcmake cmake -S Rapfi -B Rapfi/build-wasm-multi-test \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNO_MULTI_THREADING=OFF \
+            -DNO_COMMAND_MODULES=ON \
+            -DUSE_WASM_SIMD=ON \
+            -DUSE_WASM_SIMD_RELAXED=OFF \
+            -DUSE_NEON=OFF \
+            -DENABLE_LTO=OFF
+
+      - name: Build multi-thread engine
+        run: |
+          cmake --build Rapfi/build-wasm-multi-test --target rapfi --parallel 2
+          test -s Rapfi/build-wasm-multi-test/rapfi-multi-simd128.js
+          test -s Rapfi/build-wasm-multi-test/rapfi-multi-simd128.wasm
+          test -s Rapfi/build-wasm-multi-test/rapfi-multi-simd128.data
+
+      - name: Check engine files
+        run: |
+          ls -lh Rapfi/build-wasm-single-test/rapfi-single-simd128.*
+          ls -lh Rapfi/build-wasm-multi-test/rapfi-multi-simd128.*
+
+          SINGLE_DATA=$(stat -c%s Rapfi/build-wasm-single-test/rapfi-single-simd128.data)
+          MULTI_DATA=$(stat -c%s Rapfi/build-wasm-multi-test/rapfi-multi-simd128.data)
+
+          echo "Single data: ${SINGLE_DATA} bytes"
+          echo "Multi data: ${MULTI_DATA} bytes"
+
+          test "$SINGLE_DATA" -gt 1000000
+          test "$MULTI_DATA" -gt 1000000
+
+      - name: Upload test engines
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapfi-wasm-single-and-multi
+          path: |
+            Rapfi/build-wasm-single-test/rapfi-single-simd128.js
+            Rapfi/build-wasm-single-test/rapfi-single-simd128.wasm
+            Rapfi/build-wasm-single-test/rapfi-single-simd128.data
+            Rapfi/build-wasm-multi-test/rapfi-multi-simd128.js
+            Rapfi/build-wasm-multi-test/rapfi-multi-simd128.wasm
+            Rapfi/build-wasm-multi-test/rapfi-multi-simd128.data
