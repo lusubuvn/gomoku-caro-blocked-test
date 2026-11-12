@@ -5,6 +5,10 @@ import { loadRapfiPackage } from './engine-package.js'
 
 var callback, engineInstance, supportThreads, dataLoaded
 
+// Temporarily use the single-thread Worker until the multi-thread browser path is verified.
+// The multi-thread build remains available for later testing.
+const ENABLE_MULTI_THREAD_ENGINE = false
+
 function getWasmMemoryArguments(isShared, maximum_memory_mb = 2048) {
   return {
     initial: 64 * ((1024 * 1024) / 65536), // 64MB
@@ -30,7 +34,7 @@ async function init(callbackFn_) {
     canUseThreads = false
   }
 
-  if (canUseThreads) {
+  if (canUseThreads && ENABLE_MULTI_THREAD_ENGINE) {
     const engineURL = `${process.env.BASE_URL}build/rapfi-multi-simd128.js`
 
     try {
