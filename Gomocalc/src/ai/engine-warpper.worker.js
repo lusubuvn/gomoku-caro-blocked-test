@@ -1,3 +1,5 @@
+import { loadRapfiPackage } from './engine-package.js'
+
 var EngineInstance = null
 var pendingCommands = []
 
@@ -22,13 +24,23 @@ self.onmessage = function (e) {
     try {
       self.importScripts(engineURL)
 
-      Promise.resolve(self['Rapfi']({
+      loadRapfiPackage(
+        engineDirURL, 'rapfi-single-data-manifest.json'
+      ).then((packageData) => self['Rapfi']({
         locateFile: (url) => locateFile(url, engineDirURL),
         onReceiveStdout: (o) => self.postMessage({ type: 'stdout', data: o }),
         onReceiveStderr: (o) => self.postMessage({ type: 'stderr', data: o }),
         onExit: (c) => self.postMessage({ type: 'exit', data: c }),
         setStatus: (s) => self.postMessage({ type: 'status', data: s }),
         wasmMemory: memoryArgs ? new WebAssembly.Memory(memoryArgs) : undefined,
+        getPreloadedPackage: (packageName, packageSize) => {
+          if (packageData.byteLength !== packageSize) {
+            throw new Error(
+              `Rapfi NNUE package size mismatch: expected ${packageSize}, received ${packageData.byteLength}`
+            )
+          }
+          return packageData
+        },
       })).then((instance) => {
         EngineInstance = instance
         self.postMessage({ type: 'ready' })

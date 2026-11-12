@@ -68,3 +68,5 @@ Rapfi/build-*/
 # Keep Rapfi engine assets required by the website
 !Gomocalc/public/build/
 !Gomocalc/public/build/**
+/Gomocalc/public/build/rapfi.data
+/Gomocalc/public/build/rapfi-multi-simd128.data

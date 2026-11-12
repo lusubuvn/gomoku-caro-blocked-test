@@ -1,6 +1,7 @@
 import Worker from './engine-warpper.worker.js'
 import { script } from '@/../node_modules/dynamic-import/dist/import.js'
 import { threads } from 'wasm-feature-detect'
+import { loadRapfiPackage } from './engine-package.js'
 
 var callback, engineInstance, supportThreads, dataLoaded
 
@@ -37,6 +38,10 @@ async function init(callbackFn_) {
 
       const engineDirURL = engineURL.substring(0, engineURL.lastIndexOf('/') + 1)
 
+      const packageData = await loadRapfiPackage(
+        engineDirURL, 'rapfi-multi-data-manifest.json'
+      )
+
       const memory = new WebAssembly.Memory({
         initial: 64 * ((1024 * 1024) / 65536),
         maximum: 2048 * ((1024 * 1024) / 65536),
@@ -50,6 +55,14 @@ async function init(callbackFn_) {
         onExit: (c) => onEngineExit(c),
         setStatus: (s) => onEngineStatus(s),
         wasmMemory: memory,
+        getPreloadedPackage: (packageName, packageSize) => {
+          if (packageData.byteLength !== packageSize) {
+            throw new Error(
+              `Rapfi NNUE package size mismatch: expected ${packageSize}, received ${packageData.byteLength}`
+            )
+          }
+          return packageData
+        },
       })
 
       engineInstance = instance

@@ -90,11 +90,48 @@ jobs:
 
           cp Rapfi/build-wasm-single-test/rapfi-single-simd128.js Gomocalc/public/build/rapfi-single-simd128.js
           cp Rapfi/build-wasm-single-test/rapfi-single-simd128.wasm Gomocalc/public/build/rapfi-single-simd128.wasm
-          cp Rapfi/build-wasm-single-test/rapfi-single-simd128.data Gomocalc/public/build/rapfi.data
 
           cp Rapfi/build-wasm-multi-test/rapfi-multi-simd128.js Gomocalc/public/build/rapfi-multi-simd128.js
           cp Rapfi/build-wasm-multi-test/rapfi-multi-simd128.wasm Gomocalc/public/build/rapfi-multi-simd128.wasm
-          cp Rapfi/build-wasm-multi-test/rapfi-multi-simd128.data Gomocalc/public/build/rapfi-multi-simd128.data
+
+      - name: Split NNUE packages into Pages-safe files
+        run: |
+          set -e
+          rm -f Gomocalc/public/build/rapfi-single-data.part* Gomocalc/public/build/rapfi-multi-data.part*
+
+          split -b 20m -d -a 3 Rapfi/build-wasm-single-test/rapfi-single-simd128.data Gomocalc/public/build/rapfi-single-data.part
+          split -b 20m -d -a 3 Rapfi/build-wasm-multi-test/rapfi-multi-simd128.data Gomocalc/public/build/rapfi-multi-data.part
+
+          node <<'NODE'
+          const fs = require('fs')
+          const path = require('path')
+          const dir = 'Gomocalc/public/build'
+
+          for (const kind of ['single', 'multi']) {
+            const prefix = `rapfi-${kind}-data.part`
+            const parts = fs.readdirSync(dir).filter(name => name.startsWith(prefix)).sort()
+
+            if (!parts.length) throw new Error(`No NNUE chunks found for ${kind}`)
+
+            const size = parts.reduce(
+              (sum, name) => sum + fs.statSync(path.join(dir, name)).size, 0
+            )
+
+            for (const name of parts) {
+              const partSize = fs.statSync(path.join(dir, name)).size
+              if (partSize > 25 * 1024 * 1024) {
+                throw new Error(`${name} exceeds Cloudflare Pages 25 MiB limit`)
+              }
+            }
+
+            fs.writeFileSync(
+              path.join(dir, `rapfi-${kind}-data-manifest.json`),
+              JSON.stringify({ size, parts })
+            )
+
+            console.log(`${kind} NNUE: ${size} bytes, ${parts.length} chunks`)
+          }
+          NODE
 
       - name: Build website with single and multi WASM
         working-directory: Gomocalc
@@ -109,15 +146,18 @@ jobs:
 
           test -s Gomocalc/dist/build/rapfi-single-simd128.js
           test -s Gomocalc/dist/build/rapfi-single-simd128.wasm
-          test -s Gomocalc/dist/build/rapfi.data
+          test -s Gomocalc/dist/build/rapfi-single-data-manifest.json
+          test -s Gomocalc/dist/build/rapfi-multi-data-manifest.json
 
           test -s Gomocalc/dist/build/rapfi-multi-simd128.js
           test -s Gomocalc/dist/build/rapfi-multi-simd128.wasm
-          test -s Gomocalc/dist/build/rapfi-multi-simd128.data
+
+          test -n "$(find Gomocalc/dist/build -maxdepth 1 -name 'rapfi-single-data.part*' -print -quit)"
+          test -n "$(find Gomocalc/dist/build -maxdepth 1 -name 'rapfi-multi-data.part*' -print -quit)"
 
           echo "===== WEBSITE ENGINE FILES ====="
           ls -lh Gomocalc/dist/build/rapfi-*
-          ls -lh Gomocalc/dist/build/rapfi.data
+          ls -lh Gomocalc/dist/build/rapfi-*-data*
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v4
         with:
